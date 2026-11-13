@@ -1,0 +1,2050 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>C++ Memory Visualizer</title>
+<style>
+:root{
+  --bg:#0A0A0A;--fg:#E8F4F8;--muted:#8FAAB4;--card:#10191D;--line:#16485A;--soft:#102B35;--code:#0D1214;
+  --accent:#007ba7;--accent-soft:rgba(0,123,167,.18);--obj:#007ba7;--arr:#006B91;--buf:#3A9AB8;
+  --bad:#ff2d95;--bad-soft:rgba(255,45,149,.10);--leak:#ff2d95;--leak-soft:rgba(255,45,149,.09);--free:#6D8790;
+  --shadow:0 2px 5px rgba(0,0,0,.5),0 10px 26px rgba(0,0,0,.28);
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#0A0A0A;--fg:#E8F4F8;--muted:#8FAAB4;--card:#10191D;--line:#16485A;--soft:#102B35;--code:#0D1214;
+  --accent:#007ba7;--accent-soft:rgba(0,123,167,.18);--obj:#007ba7;--arr:#006B91;--buf:#3A9AB8;
+  --bad:#ff2d95;--bad-soft:rgba(255,45,149,.10);--leak:#ff2d95;--leak-soft:rgba(255,45,149,.09);--free:#6D8790;
+  --shadow:0 2px 5px rgba(0,0,0,.5),0 10px 26px rgba(0,0,0,.28);
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#0A0A0A;--fg:#E8F4F8;--muted:#8FAAB4;--card:#10191D;--line:#16485A;--soft:#102B35;--code:#0D1214;
+  --accent:#007ba7;--accent-soft:rgba(0,123,167,.18);--obj:#007ba7;--arr:#006B91;--buf:#3A9AB8;
+  --bad:#ff2d95;--bad-soft:rgba(255,45,149,.10);--leak:#ff2d95;--leak-soft:rgba(255,45,149,.09);--free:#6D8790;
+  --shadow:0 2px 5px rgba(0,0,0,.5),0 10px 26px rgba(0,0,0,.28);
+}
+*{box-sizing:border-box}
+body{margin:0;font-family:system-ui,-apple-system,"Segoe UI",sans-serif;background:var(--bg);color:var(--fg);
+  padding:env(safe-area-inset-top,0px) 18px env(safe-area-inset-bottom,0px);line-height:1.45}
+h1{font-size:22px;margin:20px 0 4px;letter-spacing:-.01em}
+.sub{color:var(--muted);font-size:14px;margin:0 0 18px;max-width:760px}
+.wrap{display:grid;grid-template-columns:minmax(300px,1fr) 2fr;gap:18px}
+@media (max-width:860px){.wrap{grid-template-columns:1fr}}
+.panel{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px;box-shadow:var(--shadow)}
+.lbl{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.07em;font-weight:600;display:block;margin-bottom:6px}
+.code-wrap{position:relative;width:100%;min-height:440px;background:var(--code);border-radius:10px;overflow:hidden}
+textarea{position:relative;z-index:1;width:100%;min-height:440px;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:13px;line-height:1.5;
+  background:transparent;color:var(--fg);border:1px solid var(--line);border-radius:10px;padding:12px;resize:vertical}
+#lineMarker{position:absolute;z-index:2;display:none;left:2px;right:2px;height:19.5px;top:13px;background:rgba(0,123,167,.20);border-left:3px solid var(--accent);box-shadow:inset 0 0 0 1px rgba(0,123,167,.18);pointer-events:none}
+.code-wrap:has(textarea:focus) #lineMarker{background:rgba(0,123,167,.25)}
+select,button,input{font:inherit;font-size:14px}
+select{padding:8px 10px;border-radius:10px;border:1px solid var(--line);background:var(--soft);color:#FFFFFF}
+button{padding:8px 14px;border-radius:10px;border:1px solid var(--line);background:var(--soft);color:#FFFFFF;cursor:pointer;transition:filter .15s}
+button:hover:not(:disabled){filter:brightness(.97)}
+button.primary{background:var(--accent);color:#fff;border-color:var(--accent);font-weight:600}
+button:disabled{opacity:.4;cursor:default}
+
+.example-tools{position:relative;display:flex;align-items:center;gap:10px;margin-bottom:12px;min-height:34px}
+#examplesToggle{white-space:nowrap}
+.example-hint{font-size:11px;color:var(--muted)}
+.examples-menu{position:absolute;z-index:20;top:40px;left:0;width:min(320px,100%);max-height:320px;overflow:auto;
+  padding:6px;background:var(--soft);border:1px solid var(--line);border-radius:10px;box-shadow:var(--shadow)}
+.examples-menu button{display:block;width:100%;text-align:left;border:0;background:transparent;padding:9px 10px;border-radius:7px;color:var(--fg)}
+.examples-menu button:hover{background:var(--soft)}
+.speed-control{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--muted);white-space:nowrap}
+.speed-control select{padding:6px 8px;min-width:58px}
+
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:12px}
+.err{margin-top:12px;color:var(--bad);font-size:13px;font-family:ui-monospace,monospace;white-space:pre-wrap}
+.viz{position:relative;height:590px;min-height:590px;max-height:590px;overflow:hidden}
+.cols{display:grid;grid-template-columns:minmax(220px,270px) minmax(0,1fr);gap:18px;position:relative;z-index:1;align-items:start;height:100%;min-height:0}
+.cols > div{min-width:0;min-height:0}
+.cols > div:first-child{height:100%;overflow:auto}
+.cols > div:last-child{height:100%;overflow:hidden}
+@media (max-width:860px){.viz{height:700px;min-height:700px;max-height:700px}.cols{grid-template-columns:1fr;grid-template-rows:190px minmax(0,1fr);gap:10px}.cols > div:first-child{overflow:auto}.cols > div:last-child{min-height:0}}
+.col-h{display:flex;align-items:center;gap:10px;font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin-bottom:12px}
+.col-h::after{content:"";flex:1;height:1px;background:var(--line)}
+.frame{display:inline-block;font-family:ui-monospace,monospace;font-size:12px;font-weight:600;color:var(--accent);
+  background:var(--accent-soft);padding:3px 11px;border-radius:999px;margin:2px 0 10px}
+.var{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:9px 12px;border-radius:10px;
+  background:var(--soft);box-shadow:var(--shadow);border:1px solid var(--line);border-left:3px solid var(--accent);
+  margin-bottom:10px;font-family:ui-monospace,monospace;font-size:13px}
+.var small{color:var(--muted);font-size:11px;margin-left:6px}
+.heap{display:block;position:relative;width:100%;height:calc(100% - 28px);min-height:0;overflow:auto;padding:0;touch-action:pan-x pan-y;background-image:radial-gradient(var(--line) .7px,transparent .7px);background-size:20px 20px;border-radius:8px}
+.heap .empty{position:absolute;left:12px;top:12px;z-index:1;pointer-events:none}
+.heap > svg.structx-connections{position:absolute;left:0;top:0;z-index:2;overflow:visible;pointer-events:none}
+.heap > svg.structx-connections path{fill:none;stroke:#007ba7;stroke-width:2.1;stroke-linecap:round}
+.heap .node{max-width:calc(100% - 20px)}
+.node{position:absolute;width:min(220px,calc(100% - 16px));cursor:grab;user-select:none;touch-action:none}
+.node.dragging{cursor:grabbing;z-index:10;box-shadow:0 10px 28px rgba(0,0,0,.2)}
+.heap.dragging-canvas{cursor:grabbing}
+.heap.dragging-canvas .node{cursor:grabbing}
+.heap .node{position:absolute;z-index:3;width:42px!important;height:42px!important;min-width:42px;max-width:42px;background:var(--card);border-radius:50%;box-shadow:var(--shadow);overflow:visible;border:1px solid var(--line);font-family:ui-monospace,monospace;font-size:10px;cursor:grab;transition:box-shadow .14s ease, z-index 0s}
+.node .node-circle{width:42px;height:42px;border-radius:50%;overflow:hidden;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;padding:3px 2px;text-align:center;background:var(--card);border:1px solid var(--line);box-shadow:var(--shadow)}
+.node .circle-title{font-weight:750;color:#007ba7;max-width:70px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:10px}
+.node .circle-data{width:100%;display:flex;flex-direction:column;gap:2px;align-items:center}
+.node .circle-data-line{max-width:36px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--fg);font-size:6px;line-height:1.1}
+.node .node-expanded{display:none;position:absolute;left:50%;bottom:calc(100% + 10px);top:auto;width:220px;max-width:min(220px,calc(100vw - 32px));transform:translateX(-50%);background:var(--card);border-radius:9px;overflow:hidden;border:1px solid var(--line);box-shadow:0 12px 32px rgba(0,0,0,.48);z-index:60;pointer-events:auto}
+/* Hover details are an overlay anchored above the circle: the node itself never changes size or position. */
+.node:hover,.node:focus-within{z-index:50!important;width:42px!important;height:42px!important;min-width:42px!important;max-width:42px!important}
+.node:hover .node-circle,.node:focus-within .node-circle{display:flex}
+.node:hover .node-expanded,.node:focus-within .node-expanded{display:block}
+.node .hd{display:flex;justify-content:space-between;align-items:center;gap:6px;padding:6px 9px;color:#fff;font-weight:650;background:var(--obj)}
+.node.k-arr .hd{background:var(--arr)}
+.node.k-buf .hd{background:var(--buf)}
+.node.k-obj .hd{background:var(--obj)}
+.node.leak .node-circle{border-color:var(--leak);box-shadow:0 0 0 3px var(--leak-soft),var(--shadow)}
+.node.leak .circle-title{color:#ff2d95}
+.node.freed .node-circle{opacity:.6;border-style:dashed}
+.node .bd{padding:1px 0 3px}
+  font-family:ui-monospace,monospace;font-size:11px}
+.node .hd{display:flex;justify-content:space-between;align-items:center;gap:6px;padding:6px 9px;color:#fff;font-weight:650;background:var(--obj)}
+.node.k-arr .hd{background:var(--arr)}
+.node.k-buf .hd{background:var(--buf)}
+.node.k-obj .hd{background:var(--obj)}
+.node.leak{border-color:var(--leak);box-shadow:0 0 0 3px var(--leak-soft),var(--shadow)}
+.node.leak .hd{background:var(--leak)}
+.node.freed{opacity:.6;border-style:dashed}
+.node.freed .hd{background:var(--free)}
+.node .bd{padding:1px 0 3px}
+.node .sec{font-size:9px;color:var(--accent);text-transform:uppercase;letter-spacing:.07em;padding:5px 9px 2px;font-weight:700}
+.node .fld{display:flex;justify-content:space-between;align-items:center;gap:6px;padding:3px 9px;min-height:23px}
+.node .fld + .fld{border-top:1px dotted var(--line)}
+.node .fld > span:first-child{color:var(--muted)}
+.badge{font-size:10px;padding:2px 8px;border-radius:999px;background:rgba(255,255,255,.25);color:#fff;text-transform:uppercase;letter-spacing:.05em;white-space:nowrap}
+.ptr{display:inline-block;padding:1px 7px;border-radius:999px;background:var(--accent-soft);color:var(--accent);font-weight:700;white-space:nowrap;box-shadow:inset 0 0 0 1px rgba(100,140,220,.12)}
+.null-value{display:inline-flex;align-items:center;justify-content:flex-end;gap:7px;vertical-align:middle;white-space:nowrap}
+.null-type{font-size:10px;color:var(--muted);font-weight:650}
+.null{
+  display:inline-flex;align-items:center;justify-content:center;position:relative;
+  width:24px;height:24px;min-width:24px;min-height:24px;box-sizing:border-box;
+  border-radius:50%;border:2px solid #ff8a2b;background:rgba(217,140,171,.14);
+  color:#ffdce9;vertical-align:middle;flex:0 0 24px;
+  box-shadow:inset 0 0 0 2px rgba(217,140,171,.1),0 0 0 1px rgba(217,140,171,.12);
+  font-size:0;line-height:1;
+}
+.null::before,.null::after{content:"";position:absolute;width:10px;height:2px;border-radius:2px;background:currentColor}
+.null::before{transform:rotate(45deg)}
+.null::after{transform:rotate(-45deg)}
+.unused{color:var(--muted);font-style:italic;font-size:10px}
+.dangling{display:inline-block;margin-left:4px;padding:1px 7px;border-radius:999px;background:var(--bad-soft);color:var(--bad);font-size:10px;font-weight:700;text-transform:uppercase}
+.empty{color:var(--muted);font-size:13px;padding:16px;border:1px dashed var(--line);border-radius:12px;text-align:center}
+svg.arrows{display:none!important}
+.desc{margin-top:14px;padding:11px 14px;border-radius:10px;background:var(--soft);font-size:14px;min-height:44px;line-height:1.5}
+.out{font-family:ui-monospace,monospace;font-size:13px;white-space:pre;background:var(--code);border:1px solid var(--line);
+  border-radius:10px;padding:10px 12px;margin:0;min-height:44px;max-height:170px;overflow:auto}
+.hint{font-size:12px;color:var(--muted);margin-top:12px;line-height:1.7}
+.hint code{background:var(--soft);padding:1px 5px;border-radius:5px}
+.heap::after{content:"";display:block;width:var(--heap-content-width,100%);height:var(--heap-content-height,100%);pointer-events:none}
+.node .circle-data-line.circle-single-value{font-size:12px;font-weight:750;line-height:1.1;color:var(--fg);max-width:38px}
+.node .node-circle{border-color:var(--class-color,var(--line));background:color-mix(in srgb,var(--class-color,var(--card)) 13%,var(--card))}
+.node .circle-data-line{color:var(--class-color,var(--fg));font-weight:800;text-shadow:0 0 7px color-mix(in srgb,var(--class-color) 30%,transparent)}
+.node .circle-data-line.circle-single-value{color:var(--class-color,var(--fg));font-weight:900;text-shadow:0 0 8px color-mix(in srgb,var(--class-color) 38%,transparent)}
+</style>
+</head>
+<body>
+<h1>C++ Memory Visualizer</h1>
+
+
+<div class="wrap">
+  <div class="panel">
+    <div class="example-tools">
+      <button id="examplesToggle" type="button" aria-expanded="false">☰ Examples</button>
+      <div id="examplesMenu" class="examples-menu" hidden></div>
+    </div>
+    <label class="lbl" for="code" style="margin-top:12px">Code</label>
+    <div class="code-wrap"><div id="lineMarker" aria-hidden="true"></div><textarea id="code" spellcheck="false"></textarea></div>
+    <div class="row"><button class="primary" id="run">Run</button></div>
+    <div class="err" id="err"></div></div>
+
+  <div class="panel viz" id="viz">
+    <div class="cols">
+      <div><div class="col-h">Stack</div><div id="stack"></div></div>
+      <div><div class="col-h">Heap <span style="font-size:10px;font-weight:400;letter-spacing:0;text-transform:none">Drag cards or empty canvas to arrange</span></div><div class="heap" id="heap"></div></div>
+    </div>
+    <svg class="arrows" id="arrows"></svg>
+  </div>
+</div>
+
+<div class="panel" style="margin-top:16px">
+  <div class="row">
+    <button id="prev">◀ Prev</button>
+    <input type="range" id="slider" min="0" max="0" value="0" style="flex:1;min-width:120px">
+    <button id="next">Next ▶</button>
+    <button id="autoplay">▶ Autoplay</button>
+    <label class="speed-control" for="playbackSpeed">Speed
+      <select id="playbackSpeed" aria-label="Autoplay speed">
+        <option value="1">1×</option>
+        <option value="2" selected>2×</option>
+        <option value="3">3×</option>
+        <option value="4">4×</option>
+      </select>
+    </label>
+    <span id="pos" style="font-size:12px;color:var(--muted)"></span>
+  </div>
+  <div class="desc" id="desc"></div>
+  <div class="col-h" style="margin-top:16px">Program output</div>
+  <pre class="out" id="console"></pre>
+</div>
+
+<script>
+// ===================== ENGINE: tokenizer, parser, interpreter =====================
+const COUT = { stream: "cout" };
+const HEX = n => "0x" + n.toString(16).toUpperCase();
+const has = (o, k) => Object.prototype.hasOwnProperty.call(o, k);
+let CLASSES = {};
+
+class CppError extends Error {
+  constructor(msg, crash) { super(msg); this.crash = !!crash; }
+}
+
+const BIN = { "||": 1, "&&": 2, "==": 3, "!=": 3, "<": 4, ">": 4, "<=": 4, ">=": 4,
+  "<<": 5, ">>": 5, "+": 6, "-": 6, "*": 7, "/": 7, "%": 7 };
+const PUNCT = ["<<=", ">>=", "->", "++", "--", "<<", ">>", "<=", ">=", "==", "!=", "&&", "||",
+  "+=", "-=", "*=", "/=", "%=", "::"];
+const ESC = { n: "\n", t: "\t", r: "\r", "0": "\0", "\\": "\\", "'": "'", '"': '"' };
+const PRIMS = ["int", "long", "short", "char", "double", "float", "bool"];
+const INTS = ["int", "long", "short", "char"];
+
+function tokenize(src) {
+  const toks = [];
+  let i = 0, line = 1;
+  const add = (t, v, s, e) => toks.push({ t, v, line, pos: s, end: e });
+  while (i < src.length) {
+    const c = src[i];
+    if (c === "\n") { line++; i++; continue; }
+    if (/\s/.test(c)) { i++; continue; }
+    if (c === "/" && src[i + 1] === "/") { while (i < src.length && src[i] !== "\n") i++; continue; }
+    if (c === "/" && src[i + 1] === "*") {
+      const e = src.indexOf("*/", i + 2), end = e < 0 ? src.length : e + 2;
+      line += (src.slice(i, end).match(/\n/g) || []).length;
+      i = end; continue;
+    }
+    if (c === "#") { while (i < src.length && src[i] !== "\n") i++; continue; }
+    if (/[A-Za-z_]/.test(c)) {
+      let j = i; while (j < src.length && /\w/.test(src[j])) j++;
+      add("id", src.slice(i, j), i, j); i = j; continue;
+    }
+    if (/\d/.test(c)) {
+      let j = i; while (j < src.length && /[\d.]/.test(src[j])) j++;
+      const txt = src.slice(i, j);
+      add("num", txt.includes(".") ? parseFloat(txt) : parseInt(txt, 10), i, j); i = j; continue;
+    }
+    if (c === '"' || c === "'") {
+      let j = i + 1, s = "";
+      while (j < src.length && src[j] !== c) {
+        if (src[j] === "\\") { s += ESC[src[j + 1]] ?? src[j + 1]; j += 2; }
+        else s += src[j++];
+      }
+      add(c === '"' ? "str" : "chr", s, i, j + 1); i = j + 1; continue;
+    }
+    const p = PUNCT.find(x => src.startsWith(x, i)) || c;
+    add("op", p, i, i + p.length); i += p.length;
+  }
+  add("eof", null, src.length, src.length);
+  return toks;
+}
+
+class Parser {
+  constructor(src) {
+    this.src = src;
+    this.toks = tokenize(src);
+    this.p = 0;
+    this.classNames = new Set();
+    this.toks.forEach((t, i) => {
+      if (t.t === "id" && (t.v === "class" || t.v === "struct") && this.toks[i + 1].t === "id") {
+        this.classNames.add(this.toks[i + 1].v);
+      }
+    });
+  }
+  get cur() { return this.toks[this.p]; }
+  peek(k) { return this.toks[Math.min(this.p + k, this.toks.length - 1)]; }
+  is(v, k = 0) { const t = this.peek(k); return (t.t === "op" || t.t === "id") && t.v === v; }
+  accept(v) { if (this.is(v)) { this.p++; return true; } return false; }
+  expect(v) { if (!this.is(v)) this.fail(`expected '${v}' but found '${this.desc()}'`); this.p++; }
+  ident() {
+    const t = this.cur;
+    if (t.t !== "id") this.fail(`expected a name but found '${this.desc()}'`);
+    this.p++; return t.v;
+  }
+  desc() { const t = this.cur; return t.t === "eof" ? "end of file" : String(t.v); }
+  fail(msg) { throw new CppError(`line ${this.cur.line}: ${msg}`); }
+  skipTo(v) {
+    while (!this.is(v)) { if (this.cur.t === "eof") this.fail(`expected '${v}'`); this.p++; }
+    this.p++;
+  }
+
+  parseProgram() {
+    const prog = { classes: {}, funcs: {} };
+    while (this.cur.t !== "eof") {
+      if (this.accept(";")) continue;
+      if (this.accept("using")) { this.skipTo(";"); continue; }
+      if (this.is("class") || this.is("struct")) {
+        const c = this.parseClass();
+        if (c) {
+          if (has(prog.classes, c.name)) this.fail(`redefinition of '${c.name}'`);
+          if (c.base && !has(prog.classes, c.base)) this.fail(`unknown base class '${c.base}'`);
+          prog.classes[c.name] = c;
+        }
+        continue;
+      }
+      const f = this.parseFunction();
+      prog.funcs[f.name] = f;
+    }
+    return prog;
+  }
+
+  parseFunction() {
+    const ret = this.parseType();
+    const name = this.ident();
+    const params = this.parseParams();
+    return { name, ret, params, body: this.parseBlock() };
+  }
+
+  parseClass() {
+    this.p++;
+    const name = this.ident();
+    if (this.accept(";")) return null;
+    let base = null;
+    if (this.accept(":")) {
+      if (this.is("public") || this.is("private") || this.is("protected")) this.p++;
+      base = this.ident();
+    }
+    this.expect("{");
+    const cls = { name, base, fields: [], methods: {}, ctors: [], dtor: null };
+    while (!this.accept("}")) {
+      if (this.cur.t === "eof") this.fail("missing '}' to close class " + name);
+      if (this.accept(";")) continue;
+      if ((this.is("public") || this.is("private") || this.is("protected")) && this.is(":", 1)) { this.p += 2; continue; }
+      if (this.accept("~")) {
+        this.ident(); this.parseParams();
+        cls.dtor = { name: "~" + name, params: [], body: this.parseBlock() };
+        continue;
+      }
+      if (this.cur.t === "id" && this.cur.v === name && this.is("(", 1)) {
+        this.p++;
+        const params = this.parseParams();
+        const inits = [];
+        if (this.accept(":")) {
+          do {
+            const m = this.ident(); this.expect("(");
+            inits.push({ name: m, args: this.parseArgs() });
+          } while (this.accept(","));
+        }
+        cls.ctors.push({ name, params, inits, body: this.parseBlock() });
+        continue;
+      }
+      const type = this.parseType();
+      const mname = this.ident();
+      if (this.is("(")) {
+        const params = this.parseParams();
+        this.accept("const");
+        if (this.accept(";")) continue;
+        cls.methods[mname] = { name: mname, ret: type, params, body: this.parseBlock() };
+        continue;
+      }
+      cls.fields.push({ name: mname, type });
+      while (this.accept(",")) cls.fields.push({ name: this.ident(), type });
+      this.expect(";");
+    }
+    if (!this.is(";")) {
+      throw new CppError(`line ${this.toks[this.p - 1].line}: expected ';' after the class definition (the closing brace needs a semicolon)`);
+    }
+    this.p++;
+    return cls;
+  }
+
+  parseParams() {
+    this.expect("(");
+    const params = [];
+    if (this.accept(")")) return params;
+    if (this.is("void") && this.is(")", 1)) { this.p += 2; return params; }
+    do {
+      const type = this.parseType();
+      const name = this.cur.t === "id" ? this.ident() : null;
+      params.push({ name, type });
+    } while (this.accept(","));
+    this.expect(")");
+    return params;
+  }
+
+  parseType() {
+    this.accept("const");
+    const name = this.ident();
+    let elem = null;
+    if (name === "vector") { this.expect("<"); elem = this.parseType(); this.expect(">"); }
+    let ptr = 0;
+    while (this.accept("*")) ptr++;
+    this.accept("&");
+    return { name, elem, ptr };
+  }
+
+  isTypeStart() {
+    const t = this.cur;
+    if (t.t !== "id") return false;
+    if (["int", "double", "float", "bool", "char", "void", "long", "short", "const", "vector"].includes(t.v)) return true;
+    return this.classNames.has(t.v);
+  }
+
+  parseBlock() {
+    this.expect("{");
+    const stmts = [];
+    while (!this.is("}")) {
+      if (this.cur.t === "eof") this.fail("missing '}'");
+      stmts.push(this.parseStmt());
+    }
+    const endLine = this.cur.line;
+    this.p++;
+    return { k: "block", stmts, endLine };
+  }
+
+  parseStmt() {
+    const t = this.cur;
+    const node = this.parseStmtInner();
+    if (node.line === undefined) node.line = t.line;
+    return node;
+  }
+
+  parseStmtInner() {
+    const t = this.cur;
+    if (this.is("{")) return this.parseBlock();
+    if (this.accept(";")) return { k: "block", stmts: [], endLine: t.line };
+    if (this.accept("if")) {
+      this.expect("("); const cond = this.parseExpr(); this.expect(")");
+      const then = this.parseStmt();
+      const els = this.accept("else") ? this.parseStmt() : null;
+      return { k: "if", cond, then, els };
+    }
+    if (this.accept("while")) {
+      this.expect("("); const cond = this.parseExpr(); this.expect(")");
+      return { k: "while", cond, body: this.parseStmt() };
+    }
+    if (this.accept("for")) return this.parseFor();
+    if (this.accept("return")) {
+      const e = this.is(";") ? null : this.parseExpr();
+      const text = this.src.slice(t.pos, this.cur.pos).trim();
+      this.expect(";");
+      return { k: "return", e, text, line: t.line };
+    }
+    if (this.accept("break")) { this.expect(";"); return { k: "break" }; }
+    if (this.accept("continue")) { this.expect(";"); return { k: "continue" }; }
+    if (this.isTypeStart()) { const d = this.parseDeclBody(); this.expect(";"); return d; }
+    const e = this.parseExpr();
+    const text = this.src.slice(t.pos, this.cur.pos).trim();
+    this.expect(";");
+    return { k: "expr", e, text, line: t.line };
+  }
+
+  parseFor() {
+    this.expect("(");
+    let init = null;
+    if (this.isTypeStart()) {
+      const save = this.p;
+      this.parseType(); this.ident();
+      const isRange = this.is(":");
+      this.p = save;
+      if (isRange) {
+        const type = this.parseType(); const name = this.ident();
+        this.expect(":");
+        const range = this.parseExpr();
+        this.expect(")");
+        return { k: "rangefor", type, name, range, body: this.parseStmt() };
+      }
+      init = this.parseDeclBody();
+    } else if (!this.is(";")) {
+      init = { k: "expr", e: this.parseExpr(), text: "" };
+    }
+    this.expect(";");
+    const cond = this.is(";") ? null : this.parseExpr();
+    this.expect(";");
+    const step = this.is(")") ? null : this.parseExpr();
+    this.expect(")");
+    return { k: "for", init, cond, step, body: this.parseStmt() };
+  }
+
+  parseDeclBody() {
+    const start = this.cur.pos;
+    const type = this.parseType();
+    const name = this.ident();
+    let init = null, args = null;
+    if (this.accept("=")) init = this.parseAssign();
+    else if (this.accept("(")) args = this.parseArgs();
+    const text = this.src.slice(start, this.toks[this.p - 1].end);
+    return { k: "decl", type, name, init, args, text };
+  }
+
+  parseArgs() {
+    const args = [];
+    if (this.accept(")")) return args;
+    do { args.push(this.parseAssign()); } while (this.accept(","));
+    this.expect(")");
+    return args;
+  }
+
+  parseExpr() { return this.parseAssign(); }
+
+  parseAssign() {
+    const left = this.parseBinary(1);
+    const t = this.cur;
+    if (t.t === "op" && ["=", "+=", "-=", "*=", "/=", "%="].includes(t.v)) {
+      this.p++;
+      return { k: "assign", op: t.v, target: left, value: this.parseAssign(), line: t.line };
+    }
+    return left;
+  }
+
+  parseBinary(minPrec) {
+    let left = this.parseUnary();
+    for (;;) {
+      const t = this.cur;
+      const prec = t.t === "op" ? BIN[t.v] : undefined;
+      if (prec === undefined || prec < minPrec) return left;
+      this.p++;
+      const right = this.parseBinary(prec + 1);
+      left = { k: "bin", op: t.v, l: left, r: right, line: t.line };
+    }
+  }
+
+  parseUnary() {
+    const t = this.cur;
+    if (t.t === "op" && ["!", "-", "+", "&", "*", "++", "--", "~"].includes(t.v)) {
+      this.p++;
+      return { k: "unary", op: t.v, e: this.parseUnary(), line: t.line };
+    }
+    if (this.accept("new")) return this.parseNew(t.line);
+    if (this.accept("delete")) {
+      let arr = false;
+      if (this.accept("[")) { this.expect("]"); arr = true; }
+      return { k: "delete", arr, e: this.parseUnary(), line: t.line };
+    }
+    return this.parsePostfix();
+  }
+
+  parseNew(line) {
+    const type = this.parseType();
+    if (this.accept("[")) {
+      const size = this.parseAssign();
+      this.expect("]");
+      return { k: "newarr", type, size, line };
+    }
+    const args = this.accept("(") ? this.parseArgs() : [];
+    return { k: "newobj", type, args, line };
+  }
+
+  parsePostfix() {
+    let e = this.parsePrimary();
+    for (;;) {
+      const t = this.cur;
+      if (this.accept("[")) {
+        const idx = this.parseExpr(); this.expect("]");
+        e = { k: "index", base: e, idx, line: t.line };
+      } else if (this.is(".") || this.is("->")) {
+        this.p++;
+        const name = this.ident();
+        const arrow = t.v === "->";
+        if (this.accept("(")) e = { k: "mcall", obj: e, name, args: this.parseArgs(), arrow, line: t.line };
+        else e = { k: "member", obj: e, name, arrow, line: t.line };
+      } else if (this.accept("(")) {
+        e = { k: "call", callee: e, args: this.parseArgs(), line: t.line };
+      } else if (this.is("++") || this.is("--")) {
+        this.p++;
+        e = { k: "postinc", op: t.v, e, line: t.line };
+      } else {
+        return e;
+      }
+    }
+  }
+
+  parsePrimary() {
+    const t = this.cur;
+    if (t.t === "num" || t.t === "str" || t.t === "chr") { this.p++; return { k: "lit", v: t.v, line: t.line }; }
+    if (this.accept("(")) { const e = this.parseExpr(); this.expect(")"); return e; }
+    if (t.t === "id") {
+      this.p++;
+      if (t.v === "true") return { k: "lit", v: true, line: t.line };
+      if (t.v === "false") return { k: "lit", v: false, line: t.line };
+      if (t.v === "nullptr") return { k: "lit", v: null, line: t.line };
+      if (t.v === "endl") return { k: "lit", v: "\n", line: t.line };
+      if (t.v === "this") return { k: "this", line: t.line };
+      return { k: "name", name: t.v, line: t.line };
+    }
+    this.fail(`unexpected '${this.desc()}'`);
+  }
+}
+
+// ---------- type and class helpers ----------
+function layoutOf(cls) {
+  if (!cls) return [];
+  const c = CLASSES[cls];
+  return [...layoutOf(c.base), ...c.fields];
+}
+function fieldOf(cls, name) {
+  return layoutOf(cls).filter(f => f.name === name).pop();
+}
+function typeLabel(t) {
+  if (!t) return "";
+  return t.name + (t.elem ? `<${t.elem.name}>` : "") + "*".repeat(t.ptr);
+}
+
+// ---------- interpreter ----------
+function execute(prog) {
+  CLASSES = prog.classes;
+  const mem = {};
+  let nextAddr = 0x1000;
+  const frames = [];
+  const steps = [];
+  let out = "";
+  let curLine = 0;
+  let failSnap = null, failLine = 0;
+
+  const alloc = n => { const a = nextAddr; nextAddr += 0x10 + 8 * n; return a; };
+  const top = () => frames[frames.length - 1];
+  const flatVars = f => {
+    const list = [];
+    for (const sc of f.scopes) for (const n of Object.keys(sc)) {
+      list.push({ name: n, v: sc[n].v, label: typeLabel(sc[n].t) });
+    }
+    return list;
+  };
+  const snapshot = () => JSON.parse(JSON.stringify({
+    mem,
+    frames: frames.map(f => ({ fn: f.fn, thisAddr: f.thisAddr, vars: flatVars(f) })),
+    out
+  }));
+  const record = (line, desc) => {
+    if (steps.length >= 3000) throw new CppError("the program runs more than 3000 steps; too long to visualize", true);
+    steps.push({ state: snapshot(), line, desc, error: null });
+  };
+  const noteFail = () => {
+    if (!failSnap) { failSnap = snapshot(); failLine = curLine; }
+  };
+
+  const blockOf = addr => {
+    const b = mem[addr];
+    if (!b) throw new CppError("access to invalid memory", true);
+    if (b.freed) throw new CppError(`use after free: memory at ${HEX(addr)} was already deleted`, true);
+    if (b.dead) throw new CppError(`use of object at ${HEX(addr)} after its lifetime ended`, true);
+    return b;
+  };
+  const num = (v, what) => {
+    if (typeof v === "number") return v;
+    if (typeof v === "boolean") return v ? 1 : 0;
+    if (v === null) throw new CppError(`${what}: nullptr used as a number`, true);
+    throw new CppError(`${what}: operand is not a number`);
+  };
+  const truthy = v => {
+    if (v === null || v === undefined) return false;
+    if (typeof v === "object") return true;
+    return !!v;
+  };
+  const coerce = (v, t) => {
+    if (v === undefined) return null;
+    if (!t || t.ptr > 0) return v;
+    if (INTS.includes(t.name) && typeof v === "number") return Math.trunc(v);
+    if (t.name === "bool" && typeof v === "number") return v !== 0;
+    return v;
+  };
+
+  // Static class of an expression (what the compiler sees), or null.
+  const staticClass = e => {
+    if (e.k === "name") { const c = lookup(e.name); return c.t && has(CLASSES, c.t.name) ? c.t.name : null; }
+    if (e.k === "member") {
+      const oc = staticClass(e.obj);
+      const fd = oc ? fieldOf(oc, e.name) : null;
+      return fd && has(CLASSES, fd.type.name) ? fd.type.name : null;
+    }
+    if (e.k === "this") return top().thisAddr != null ? mem[top().thisAddr].cls : null;
+    return null;
+  };
+  const memberCell = (addr, name, stat) => {
+    const o = blockOf(addr);
+    if (o.kind !== "obj") throw new CppError(`'.${name}' used on something that is not an object`);
+    const fd = fieldOf(stat || o.cls, name);
+    if (!fd) throw new CppError(`'${stat || o.cls}' has no member named '${name}'`);
+    return {
+      get: () => mem[addr].fields[name],
+      set: v => { mem[addr].fields[name] = coerce(v, fd.type); },
+      t: fd.type
+    };
+  };
+  const lookup = name => {
+    const f = top();
+    for (let i = f.scopes.length - 1; i >= 0; i--) {
+      const sc = f.scopes[i];
+      if (has(sc, name)) {
+        const cell = sc[name];
+        return { get: () => cell.v, set: v => { cell.v = coerce(v, cell.t); }, t: cell.t };
+      }
+    }
+    if (f.thisAddr != null && fieldOf(mem[f.thisAddr].cls, name)) return memberCell(f.thisAddr, name);
+    throw new CppError(`'${name}' was not declared in this scope`);
+  };
+  const objAddr = (v, arrow) => {
+    if (v === null) throw new CppError("member access through a nullptr (segmentation fault)", true);
+    if (v.ref !== undefined) {
+      if (arrow) throw new CppError("'->' used on an object; use '.' instead");
+      return v.ref;
+    }
+    if (v.p !== undefined) {
+      if (!arrow) throw new CppError("'.' used on a pointer; use '->' instead");
+      return v.p;
+    }
+    throw new CppError("member access on a value that is not an object");
+  };
+  const elemCell = (b, i) => {
+    if (b === null) throw new CppError("subscript of a nullptr (segmentation fault)", true);
+    if (b.p !== undefined) {
+      const a = blockOf(b.p);
+      if (a.kind !== "arr") throw new CppError("subscript on a pointer that does not point to an array");
+      if (i < 0 || i >= a.n) throw new CppError(`index ${i} is out of bounds for an array of size ${a.n}`, true);
+      return { get: () => mem[b.p].elems[i], set: v => { mem[b.p].elems[i] = v; } };
+    }
+    if (b.ref !== undefined) {
+      const v = blockOf(b.ref);
+      if (v.kind !== "vec") throw new CppError("subscript on an object that is not a vector or array");
+      if (i < 0 || i >= v.size) throw new CppError(`index ${i} is out of range for a vector of size ${v.size}`, true);
+      return {
+        get: () => mem[mem[b.ref].buf].elems[i],
+        set: x => { mem[mem[b.ref].buf].elems[i] = x; }
+      };
+    }
+    throw new CppError("subscript on a value that is not an array or vector");
+  };
+  const lv = e => {
+    if (e.k === "name") return lookup(e.name);
+    if (e.k === "member") return memberCell(objAddr(ev(e.obj), e.arrow), e.name, staticClass(e.obj));
+    if (e.k === "index") { const b = ev(e.base); return elemCell(b, num(ev(e.idx), "subscript")); }
+    throw new CppError("expression is not assignable");
+  };
+
+  const equal = (a, b) => {
+    if (a === null || b === null) return a === b;
+    if (a.p !== undefined || b.p !== undefined) return a.p === b.p;
+    return num(a, "==") === num(b, "==");
+  };
+  const arith = (op, a, b) => {
+    const x = num(a, op), y = num(b, op);
+    switch (op) {
+      case "+": return x + y;
+      case "-": return x - y;
+      case "*": return x * y;
+      case "/":
+        if (y === 0) throw new CppError("division by zero (undefined behavior)", true);
+        return Number.isInteger(x) && Number.isInteger(y) ? Math.trunc(x / y) : x / y;
+      case "%":
+        if (y === 0) throw new CppError("division by zero (undefined behavior)", true);
+        return x % y;
+      case "<": return x < y;
+      case ">": return x > y;
+      case "<=": return x <= y;
+      case ">=": return x >= y;
+      case "<<": return x << y;
+      case ">>": return x >> y;
+    }
+    throw new CppError(`unsupported operator '${op}'`);
+  };
+  const str = v => {
+    if (v === COUT) throw new CppError("cannot print the stream itself");
+    if (typeof v === "string") return v;
+    if (typeof v === "boolean") return v ? "1" : "0";
+    if (typeof v === "number") return String(v);
+    if (v === null) return "0x0";
+    if (v.p !== undefined) return HEX(v.p);
+    throw new CppError("cannot print an object directly; print a member instead");
+  };
+
+  // ----- vectors -----
+  const newVec = stack => {
+    const a = alloc(1);
+    mem[a] = { kind: "vec", buf: null, size: 0, cap: 0, stack, freed: false, dead: false };
+    return a;
+  };
+  const vecPush = (addr, val) => {
+    const vb = mem[addr];
+    if (vb.size === vb.cap) {
+      const newCap = vb.cap === 0 ? 1 : vb.cap * 2;
+      const nb = alloc(newCap);
+      const elems = new Array(newCap).fill(null);
+      if (vb.buf !== null) {
+        const ob = mem[vb.buf];
+        for (let i = 0; i < vb.size; i++) elems[i] = ob.elems[i];
+        ob.freed = true;
+      }
+      mem[nb] = { kind: "buf", elems, cap: newCap, used: vb.size, freed: false };
+      vb.buf = nb;
+      vb.cap = newCap;
+    }
+    const bb = mem[vb.buf];
+    bb.elems[vb.size] = val;
+    vb.size++;
+    bb.used = vb.size;
+  };
+  const vecMethod = (addr, name, args) => {
+    const vb = mem[addr];
+    switch (name) {
+      case "push_back": vecPush(addr, args[0]); return null;
+      case "pop_back":
+        if (vb.size === 0) throw new CppError("pop_back on an empty vector (undefined behavior)", true);
+        vb.size--; mem[vb.buf].used = vb.size; return null;
+      case "size": return vb.size;
+      case "empty": return vb.size === 0;
+      case "clear": vb.size = 0; if (vb.buf !== null) mem[vb.buf].used = 0; return null;
+      case "front":
+        if (vb.size === 0) throw new CppError("front() on an empty vector", true);
+        return mem[vb.buf].elems[0];
+      case "back":
+        if (vb.size === 0) throw new CppError("back() on an empty vector", true);
+        return mem[vb.buf].elems[vb.size - 1];
+    }
+    throw new CppError(`vector has no supported member '${name}'`);
+  };
+  const freeVec = addr => {
+    const vb = mem[addr];
+    if (vb.buf !== null) mem[vb.buf].freed = true;
+    vb.buf = null; vb.size = 0; vb.cap = 0; vb.freed = true;
+  };
+
+  // ----- objects -----
+  const defaultOf = t => {
+    if (t.ptr > 0) return null;
+    if (t.name === "vector") return { ref: newVec(false) };
+    if (has(CLASSES, t.name)) return { ref: createObj(t.name, [], false) };
+    if (PRIMS.includes(t.name)) return t.name === "bool" ? false : 0;
+    throw new CppError(`unknown type '${t.name}'`);
+  };
+  const releaseValue = v => {
+    if (!v || v.ref === undefined) return;
+    const m = mem[v.ref];
+    if (!m || m.freed || m.dead) return;
+    if (m.kind === "vec") freeVec(v.ref);
+    else if (m.kind === "obj") destroyObj(v.ref);
+  };
+  const destroyObj = addr => {
+    const o = mem[addr];
+    if (o.freed || o.dead) return;
+    for (let c = o.cls; c; c = CLASSES[c].base) {
+      if (CLASSES[c].dtor) invoke(CLASSES[c].dtor, [], addr);
+    }
+    for (const f of layoutOf(o.cls)) releaseValue(o.fields[f.name]);
+    if (o.stack) o.dead = true; else o.freed = true;
+  };
+  const destroyStack = addr => {
+    const b = mem[addr];
+    if (b.kind === "vec") { freeVec(addr); b.dead = true; }
+    else destroyObj(addr);
+  };
+  const construct = (cls, addr, args) => {
+    const C = CLASSES[cls];
+    if (C.ctors.length === 0) {
+      if (args.length > 0) {
+        const layout = layoutOf(cls);
+        if (args.length > layout.length) throw new CppError(`too many arguments for ${cls} (it has ${layout.length} data members)`);
+        args.forEach((v, i) => { mem[addr].fields[layout[i].name] = coerce(v, layout[i].type); });
+      }
+      return;
+    }
+    const ctor = C.ctors.find(c => c.params.length === args.length);
+    if (!ctor) throw new CppError(`no constructor of ${cls} takes ${args.length} argument(s)`);
+    const fn = { name: cls, params: ctor.params, ret: null, body: ctor.body };
+    callFunction(fn, args, addr, () => {
+      if (C.base) {
+        const bi = ctor.inits.find(i => i.name === C.base);
+        construct(C.base, addr, bi ? bi.args.map(ev) : []);
+      }
+      for (const init of ctor.inits) {
+        if (init.name === C.base) continue;
+        const f = fieldOf(cls, init.name);
+        if (!f) throw new CppError(`'${init.name}' is not a member of ${cls}`);
+        const vals = init.args.map(ev);
+        if (vals.length) mem[addr].fields[init.name] = coerce(vals[0], f.type);
+      }
+    });
+  };
+  const createObj = (cls, args, stack) => {
+    const layout = layoutOf(cls);
+    const addr = alloc(layout.length);
+    const o = { kind: "obj", cls, fields: {}, stack, freed: false, dead: false };
+    mem[addr] = o;
+    for (const f of layout) o.fields[f.name] = defaultOf(f.type);
+    construct(cls, addr, args);
+    return addr;
+  };
+  const findMethod = (cls, name) => {
+    for (let c = cls; c; c = CLASSES[c].base) {
+      if (has(CLASSES[c].methods, name)) return CLASSES[c].methods[name];
+    }
+    return null;
+  };
+
+  // ----- functions and scopes -----
+  const callFunction = (fn, args, thisAddr, pre) => {
+    if (frames.length >= 300) throw new CppError("stack overflow: too much recursion", true);
+    const savedLine = curLine;
+    const frame = { fn: fn.name, thisAddr, scopes: [{}] };
+    fn.params.forEach((p, i) => {
+      if (p.name) frame.scopes[0][p.name] = { v: coerce(args[i], p.type), t: p.type };
+    });
+    frames.push(frame);
+    try {
+      if (pre) pre();
+      const r = execBlock(fn.body);
+      return r && r.ret ? coerce(r.v, fn.ret) : null;
+    } catch (err) {
+      noteFail();
+      throw err;
+    } finally {
+      frames.pop();
+      if (!failSnap) curLine = savedLine;
+    }
+  };
+  const invoke = (fn, args, thisAddr, pre) => {
+    if (args.length !== fn.params.length) {
+      throw new CppError(`${fn.name} expects ${fn.params.length} argument(s) but got ${args.length}`);
+    }
+    return callFunction(fn, args, thisAddr, pre);
+  };
+  const popScope = line => {
+    const sc = top().scopes.pop();
+    for (const n of Object.keys(sc).reverse()) {
+      const v = sc[n].v;
+      if (v && v.ref !== undefined) {
+        const m = mem[v.ref];
+        if (m && m.stack && !m.dead) {
+          destroyStack(v.ref);
+          record(line, `${n} goes out of scope`);
+        }
+      }
+    }
+  };
+  const withScope = (line, fn) => {
+    top().scopes.push({});
+    let r;
+    try { r = fn(); }
+    catch (err) { noteFail(); throw err; }
+    popScope(line);
+    return r;
+  };
+  const execBlock = blk => withScope(blk.endLine, () => {
+    for (const st of blk.stmts) {
+      const r = execStmt(st);
+      if (r) return r;
+    }
+    return null;
+  });
+
+  // ----- expressions -----
+  const newObject = e => {
+    if (e.type.name === "vector") return { p: newVec(false) };
+    if (!has(CLASSES, e.type.name)) throw new CppError(`unknown type '${e.type.name}'`);
+    return { p: createObj(e.type.name, e.args.map(ev), false) };
+  };
+  const newArray = e => {
+    const n = num(ev(e.size), "array size");
+    const elems = [];
+    for (let i = 0; i < n; i++) elems.push(defaultOf(e.type));
+    const a = alloc(n);
+    mem[a] = { kind: "arr", elems, n, elemLabel: typeLabel(e.type), freed: false, dead: false };
+    return { p: a };
+  };
+  const doDelete = e => {
+    const v = ev(e.e);
+    if (v === null) return;
+    if (v.p === undefined) throw new CppError("delete applied to a value that is not a pointer");
+    const b = mem[v.p];
+    if (!b) throw new CppError("delete of invalid memory", true);
+    if (b.freed || b.dead) throw new CppError("double free: this memory was already deleted", true);
+    if (b.stack) throw new CppError("delete of an object on the stack (undefined behavior)", true);
+    if (b.kind === "arr") {
+      for (const el of b.elems) releaseValue(el);
+      b.freed = true;
+    } else if (b.kind === "obj") {
+      destroyObj(v.p);
+    } else {
+      throw new CppError("delete of memory that was not allocated with new");
+    }
+  };
+  const callMethod = e => {
+    const recv = ev(e.obj);
+    const args = e.args.map(ev);
+    const addr = objAddr(recv, e.arrow);
+    const b = blockOf(addr);
+    if (b.kind === "vec") return vecMethod(addr, e.name, args);
+    if (b.kind !== "obj") throw new CppError(`'${e.name}' is not a member function here`);
+    const stat = staticClass(e.obj) || b.cls;
+    const m = findMethod(stat, e.name);
+    if (!m) throw new CppError(`'${stat}' has no member function named '${e.name}'`);
+    return invoke(m, args, addr);
+  };
+  const callFn = e => {
+    const args = e.args.map(ev);
+    if (e.callee.k === "name") {
+      const f = top();
+      if (f.thisAddr != null) {
+        const m = findMethod(mem[f.thisAddr].cls, e.callee.name);
+        if (m) return invoke(m, args, f.thisAddr);
+      }
+      if (has(prog.funcs, e.callee.name)) return invoke(prog.funcs[e.callee.name], args, null);
+      throw new CppError(`'${e.callee.name}' was not declared in this scope`);
+    }
+    throw new CppError("unsupported function call");
+  };
+  const evAssign = e => {
+    const c = lv(e.target);
+    let v = ev(e.value);
+    if (e.op !== "=") v = arith(e.op.slice(0, -1), c.get(), v);
+    if (v !== null && v.ref !== undefined) {
+      throw new CppError("assigning an object or vector is not supported; use pointers or push_back");
+    }
+    c.set(v);
+    return v;
+  };
+  const evBin = e => {
+    if (e.op === "&&") return truthy(ev(e.l)) && truthy(ev(e.r));
+    if (e.op === "||") return truthy(ev(e.l)) || truthy(ev(e.r));
+    const a = ev(e.l);
+    if (e.op === "<<" && a === COUT) { out += str(ev(e.r)); return COUT; }
+    const b = ev(e.r);
+    if (e.op === "==") return equal(a, b);
+    if (e.op === "!=") return !equal(a, b);
+    return arith(e.op, a, b);
+  };
+  const evUnary = e => {
+    switch (e.op) {
+      case "!": return !truthy(ev(e.e));
+      case "-": return -num(ev(e.e), "-");
+      case "+": return num(ev(e.e), "+");
+      case "~": return ~num(ev(e.e), "~");
+      case "&": {
+        const v = ev(e.e);
+        if (v && v.ref !== undefined) return { p: v.ref };
+        throw new CppError("address-of is only supported for objects");
+      }
+      case "*": {
+        const v = ev(e.e);
+        if (v === null) throw new CppError("dereference of a nullptr (segmentation fault)", true);
+        const b = blockOf(v.p);
+        if (b.kind === "obj") return { ref: v.p };
+        if (b.kind === "arr") return b.elems[0];
+        throw new CppError("unsupported dereference");
+      }
+      case "++":
+      case "--": {
+        const c = lv(e.e);
+        const nv = c.get() + (e.op === "++" ? 1 : -1);
+        c.set(nv);
+        return nv;
+      }
+    }
+    throw new CppError("unsupported unary operator");
+  };
+  const ev = e => {
+    switch (e.k) {
+      case "lit": return e.v;
+      case "this":
+        if (top().thisAddr == null) throw new CppError("'this' used outside of a member function");
+        return { p: top().thisAddr };
+      case "name": return e.name === "cout" ? COUT : lookup(e.name).get();
+      case "member":
+      case "index": return lv(e).get();
+      case "bin": return evBin(e);
+      case "unary": return evUnary(e);
+      case "postinc": {
+        const c = lv(e.e);
+        const old = c.get();
+        c.set(e.op === "++" ? old + 1 : old - 1);
+        return old;
+      }
+      case "assign": return evAssign(e);
+      case "mcall": return callMethod(e);
+      case "call": return callFn(e);
+      case "newobj": return newObject(e);
+      case "newarr": return newArray(e);
+      case "delete": doDelete(e); return null;
+    }
+    throw new CppError("unsupported expression");
+  };
+
+  // ----- declarations and statements -----
+  const declare = d => {
+    const sc = top().scopes[top().scopes.length - 1];
+    if (has(sc, d.name)) throw new CppError(`redefinition of '${d.name}'`);
+    const T = d.type;
+    let v;
+    if (T.ptr > 0) {
+      v = d.init ? ev(d.init) : null;
+      if (v !== null && v.p === undefined) throw new CppError(`cannot initialize pointer '${d.name}' with a non-pointer value`);
+    } else if (T.name === "vector") {
+      if (d.init) throw new CppError("initializing a vector with '=' is not supported; use push_back");
+      const a = newVec(true);
+      v = { ref: a };
+      if (d.args && d.args.length === 1) {
+        const n = num(ev(d.args[0]), "vector size");
+        for (let i = 0; i < n; i++) vecPush(a, 0);
+      }
+    } else if (has(CLASSES, T.name)) {
+      if (d.init) throw new CppError(`copy initialization of '${T.name}' is not supported`);
+      v = { ref: createObj(T.name, d.args ? d.args.map(ev) : [], true) };
+    } else {
+      v = d.init ? coerce(ev(d.init), T) : defaultOf(T);
+    }
+    sc[d.name] = { v, t: T };
+  };
+  const execStmt = s => {
+    const line = s.line ?? curLine;
+    curLine = line;
+    switch (s.k) {
+      case "block": return execBlock(s);
+      case "decl": declare(s); record(line, s.text); return null;
+      case "expr": ev(s.e); record(line, s.text); return null;
+      case "if":
+        if (truthy(ev(s.cond))) return execStmt(s.then);
+        return s.els ? execStmt(s.els) : null;
+      case "while":
+        while (truthy(ev(s.cond))) {
+          const r = execStmt(s.body);
+          if (r) { if (r.brk) break; if (r.ret) return r; }
+        }
+        return null;
+      case "for":
+        return withScope(line, () => {
+          if (s.init) execStmt(s.init);
+          while (!s.cond || truthy(ev(s.cond))) {
+            const r = execStmt(s.body);
+            if (r) { if (r.brk) break; if (r.ret) return r; }
+            if (s.step) ev(s.step);
+          }
+          return null;
+        });
+      case "rangefor": {
+        const cont = ev(s.range);
+        if (!cont || cont.ref === undefined || mem[cont.ref].kind !== "vec") {
+          throw new CppError("range-based for is only supported over a vector");
+        }
+        const va = cont.ref;
+        return withScope(line, () => {
+          const sc = top().scopes[top().scopes.length - 1];
+          for (let i = 0; i < mem[va].size; i++) {
+            sc[s.name] = { v: mem[mem[va].buf].elems[i], t: s.type };
+            const r = execStmt(s.body);
+            if (r) { if (r.brk) break; if (r.ret) return r; }
+          }
+          return null;
+        });
+      }
+      case "return": {
+        const v = s.e ? ev(s.e) : null;
+        record(line, s.text || "return");
+        return { ret: true, v };
+      }
+      case "break": return { brk: true };
+      case "continue": return { cont: true };
+    }
+    throw new CppError("unsupported statement");
+  };
+
+  // ----- run main -----
+  const main = prog.funcs.main;
+  try {
+    if (!main) throw new CppError("no main() function found");
+    record(0, "Program start");
+    callFunction(main, [], null);
+    record(main.body.endLine, "main() returns");
+    return { steps, failed: false, output: out };
+  } catch (e) {
+    const msg = e instanceof CppError ? e.message : "internal error: " + e.message;
+    const state = failSnap || snapshot();
+    const line = failSnap ? failLine : curLine;
+    steps.push({ state, line, desc: "", error: `line ${line}: ${msg}` });
+    return { steps, failed: true, output: out };
+  }
+}
+
+function runProgram(src) {
+  let prog;
+  try {
+    prog = new Parser(src).parseProgram();
+  } catch (e) {
+    const msg = e instanceof CppError ? e.message : "internal error: " + e.message;
+    const empty = { mem: {}, frames: [], out: "" };
+    return {
+      steps: [{ state: empty, line: 0, desc: "Program start", error: null },
+              { state: empty, line: 0, desc: "", error: msg }],
+      failed: true,
+      output: ""
+    };
+  }
+  return execute(prog);
+}
+
+// ===================== UI =====================
+const $ = id => document.getElementById(id);
+const esc = s => String(s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const BADGE = {
+  stack: ["stack", "b-stack"], live: ["live", "b-live"], leak: ["leaked", "b-leak"],
+  freed: ["freed", "b-freed"], ended: ["ended", "b-freed"]
+};
+
+let steps = [], idx = 0, pairs = [], idCounter = 0;
+let autoplayTimer = null;
+
+// Live / leaked / freed / stack / ended status per block, from reachability.
+function analyze(st) {
+  const reach = new Set();
+  const work = [];
+  const pushVal = v => {
+    if (v && typeof v === "object") {
+      if (v.ref !== undefined) work.push(v.ref);
+      else if (v.p !== undefined && v.p !== null) work.push(v.p);
+    }
+  };
+  for (const f of st.frames) for (const v of f.vars) pushVal(v.v);
+  for (const k of Object.keys(st.mem)) if (st.mem[k].stack && !st.mem[k].dead) work.push(Number(k));
+  while (work.length) {
+    const a = work.pop();
+    if (reach.has(a)) continue;
+    reach.add(a);
+    const b = st.mem[a];
+    if (!b || b.freed || b.dead) continue;
+    if (b.kind === "obj") Object.values(b.fields).forEach(pushVal);
+    else if (b.kind === "arr" || b.kind === "buf") b.elems.forEach(pushVal);
+    else if (b.kind === "vec" && b.buf !== null) work.push(b.buf);
+  }
+  const status = {};
+  for (const k of Object.keys(st.mem)) {
+    const b = st.mem[k], a = Number(k);
+    status[k] = b.dead ? "ended" : b.stack ? "stack" : b.freed ? "freed" : reach.has(a) ? "live" : "leak";
+  }
+  return status;
+}
+
+function ptrId(target) {
+  const id = "p" + (++idCounter);
+  pairs.push([id, target]);
+  return id;
+}
+
+function vecHtml(st, addr) {
+  const vb = st.mem[addr];
+  let s = `vector size ${vb.size}, cap ${vb.cap}`;
+  if (vb.buf !== null) s += ` → <span class="ptr" id="${ptrId(vb.buf)}">${HEX(vb.buf)}</span>`;
+  else s += ` <span class="null" role="img" aria-label="nullptr" title="nullptr"></span>`;
+  return s;
+}
+
+function displayType(typeName) {
+  if (typeof typeName === "string") return typeName;
+  if (typeName == null) return "";
+  if (typeof typeName === "object") {
+    if (typeof typeName.name === "string") return typeName.name;
+    if (typeof typeName.base === "string") return typeName.base + (typeName.ptr ? "*".repeat(typeName.ptr) : "");
+    if (typeof typeName.type === "string") return typeName.type;
+    if (typeof typeName.toString === "function" && typeName.toString !== Object.prototype.toString) return typeName.toString();
+  }
+  return "";
+}
+function valueHtml(st, status, v, typeName = "") {
+  if (v === null || v === undefined) {
+    const pointerType = displayType(typeName).trim();
+    return `<span class="null-value">${pointerType ? `<span class="null-type">${esc(pointerType)}</span>` : ""}<span class="null" role="img" aria-label="nullptr" title="nullptr"></span></span>`;
+  }
+  if (typeof v === "number") return esc(v);
+  if (typeof v === "boolean") return v ? "true" : "false";
+  if (typeof v === "string") return esc(JSON.stringify(v));
+  if (v.ref !== undefined) {
+    const b = st.mem[v.ref];
+    if (b && b.kind === "vec") return vecHtml(st, v.ref);
+    return `<span class="ptr" id="${ptrId(v.ref)}">${b ? b.kind : "?"} ${HEX(v.ref)}</span>`;
+  }
+  if (v.p !== undefined) {
+    const dang = status[v.p] === "freed" || status[v.p] === "ended";
+    return `<span class="ptr" id="${ptrId(v.p)}">${HEX(v.p)}</span>` + (dang ? ` <span class="dangling">dangling</span>` : "");
+  }
+  return esc(JSON.stringify(v));
+}
+
+function titleOf(b, a) {
+  if (b.kind === "obj") return `${b.cls} @ ${HEX(a)}`;
+  if (b.kind === "arr") return `${b.elemLabel}[${b.n}] @ ${HEX(a)}`;
+  return `buffer @ ${HEX(a)}`;
+}
+
+function byteSize(typeName) {
+  const t = String(typeName || "").replace(/\\s/g, "");
+  if (t.includes("*")) return 8;
+  if (t === "char" || t === "bool") return 1;
+  if (t === "short") return 2;
+  if (t === "double" || t === "long" || t === "longlong") return 8;
+  return 4;
+}
+
+function isPointerFieldType(typeName) {
+  return displayType(typeName).includes("*");
+}
+function circleSummary(st, block) {
+  const items = [];
+  if (block.kind === "obj") {
+    const chain = [];
+    for (let c = block.cls; c; c = CLASSES[c].base) chain.unshift(c);
+    for (const c of chain) {
+      for (const f of CLASSES[c].fields) {
+        const value = block.fields[f.name];
+        if (isPointerFieldType(f.type) || value === null || value === undefined ||
+            typeof value === "object") continue;
+        items.push({ name: f.name, value: typeof value === "string" ? value : String(value) });
+      }
+    }
+  } else if (block.kind === "arr" || block.kind === "buf") {
+    const values = block.kind === "arr" ? block.elems : block.elems.slice(0, block.used || 0);
+    values.forEach((value, index) => {
+      if (value !== null && value !== undefined && typeof value !== "object") {
+        items.push({ name: `[${index}]`, value: String(value) });
+      }
+    });
+  }
+
+  // A single scalar is the whole point of the compact circle: show only its value.
+  if (items.length === 1) {
+    return `<div class="circle-data-line circle-single-value">${esc(items[0].value)}</div>`;
+  }
+  return items.slice(0, 3).map(item =>
+    `<div class="circle-data-line">${esc(item.name)}: ${esc(item.value)}</div>`
+  ).join("");
+}
+
+// Assign each declared class its own hue. Unlike hashing into a small palette,
+// this avoids two different class names accidentally receiving the same color.
+function classColorFor(className) {
+  const classNames = Object.keys(CLASSES);
+  let index = classNames.indexOf(className);
+  if (index < 0) index = classNames.length;
+  const palette = ["#007ba7", "#168DB5", "#006B91", "#2999BA", "#3A9AB8", "#0B789E", "#55AFC9", "#ff2d95"];
+  if (index < palette.length) return palette[index];
+  const hue = (index * 137.508) % 360;
+  return `hsl(${hue.toFixed(1)}, 48%, 70%)`;
+}
+
+function blockCard(st, status, addr, title) {
+  const b = st.mem[addr];
+  const s = status[addr];
+  const cls = s === "leak" ? " leak" : (s === "freed" || s === "ended") ? " freed" : "";
+  const [label, badge] = BADGE[s] || ["?", "b-freed"];
+  let body = "";
+  if (b.kind === "obj") {
+    const chain = [];
+    for (let c = b.cls; c; c = CLASSES[c].base) chain.unshift(c);
+    for (const c of chain) {
+      body += `<div class="sec">${esc(c)}</div>`;
+      for (const f of CLASSES[c].fields) {
+        body += `<div class="fld"><span>${esc(f.name)}</span><span>${valueHtml(st, status, b.fields[f.name], f.type || "")}</span></div>`;
+      }
+    }
+  } else if (b.kind === "arr") {
+    body = `<div class="sec">ARRAY ELEMENTS</div>` +
+      b.elems.map((v, i) => `<div class="fld"><span>[${i}]</span><span>${valueHtml(st, status, v, b.elemLabel || "")}</span></div>`).join("");
+  } else if (b.kind === "buf") {
+    body = `<div class="sec">VECTOR ELEMENTS</div>` +
+      b.elems.map((v, i) => `<div class="fld"><span>[${i}]</span><span>${
+      i < (b.used || 0) ? valueHtml(st, status, v) : '<span class="unused">unused</span>'}</span></div>`).join("");
+  }
+  const cardTitle = title || titleOf(b, addr);
+  const classColor = b.kind === "obj" ? classColorFor(b.cls) : "";
+  const summary = circleSummary(st, b);
+  return `<div class="node k-${b.kind}${cls}" id="node-${addr}" data-class="${esc(b.kind === "obj" ? b.cls : b.kind)}" style="--class-color:${classColor}" title="Hover to expand">` +
+    `<div class="node-circle"><div class="circle-data">${summary || '<div class="circle-data-line">No scalar data</div>'}</div></div>` +
+    `<div class="node-expanded"><div class="hd"><span>${esc(cardTitle)}</span><span class="badge ${badge}">${label}</span></div>` +
+    `<div class="bd">${body}</div></div></div>`;
+}
+
+function varHtml(st, status, v) {
+  const val = v.v;
+  if (val && val.ref !== undefined) {
+    const b = st.mem[val.ref];
+    if (b && b.kind === "obj") return blockCard(st, status, val.ref, `${v.name} (${b.cls})`);
+    return `<div class="var"><span>${esc(v.name)} <small>vector</small></span><span>${vecHtml(st, val.ref)}</span></div>`;
+  }
+  return `<div class="var"><span>${esc(v.name)} <small>${esc(v.label)}</small></span>` +
+    `<span>${valueHtml(st, status, val)}</span></div>`;
+}
+
+function render(st) {
+  pairs = [];
+  idCounter = 0;
+  const status = analyze(st);
+  window.__structxPairs = pairs;
+  let sHtml = "";
+  for (const f of st.frames) {
+    sHtml += `<div class="frame">${esc(f.fn)}()${f.thisAddr != null ? " · this = " + HEX(f.thisAddr) : ""}</div>`;
+    for (const v of f.vars) sHtml += varHtml(st, status, v);
+  }
+  $("stack").innerHTML = sHtml || `<div class="empty">Nothing in scope</div>`;
+
+  const addrs = Object.keys(st.mem).map(Number).sort((a, b) => a - b);
+  let hHtml = "";
+  for (const a of addrs) {
+    const b = st.mem[a];
+    if ((b.kind === "obj" && (!b.stack || b.dead)) || b.kind === "arr" || b.kind === "buf") {
+      hHtml += blockCard(st, status, a, null);
+    }
+  }
+  $("heap").innerHTML = hHtml || `<div class="empty">Heap is empty</div>`;
+  requestAnimationFrame(() => {
+    arrangeHeap();
+    window.parent.postMessage({ type: "structx:refresh" }, "*");
+  });
+}
+
+// Arrange heap blocks according to pointer relationships. Objects referenced by
+// another object move to the next column; siblings get their own rows.
+function arrangeHeap() {
+  const heap = $("heap");
+  const cards = [...heap.querySelectorAll(".node")];
+  if (!cards.length) return;
+
+  const cardById = new Map(cards.map(card => [card.id.replace("node-", ""), card]));
+  const ids = [...cardById.keys()];
+  const children = new Map(ids.map(id => [id, []]));
+  const parents = new Map(ids.map(id => [id, []]));
+
+  // Build directed object relationships from pointer fields.
+  for (const [sourcePointerId, targetAddress] of pairs) {
+    const sourcePointer = document.getElementById(sourcePointerId);
+    const sourceCard = sourcePointer?.closest("#heap .node");
+    if (!sourceCard) continue;
+    const sourceId = sourceCard.id.replace("node-", "");
+    const targetId = String(targetAddress);
+    if (!cardById.has(sourceId) || !cardById.has(targetId)) continue;
+    const list = children.get(sourceId);
+    if (!list.includes(targetId)) list.push(targetId);
+    const p = parents.get(targetId);
+    if (!p.includes(sourceId)) p.push(sourceId);
+  }
+
+  // Keep any manually positioned card fixed. The automatic layout only places
+  // cards that have not been manually positioned by the user.
+  const fixed = new Set(cards.filter(c => c.dataset.manualPosition === "true")
+    .map(c => c.id.replace("node-", "")));
+  const roots = ids.filter(id => (parents.get(id) || []).length === 0);
+  const rootList = roots.length ? roots : ids.slice(0, 1);
+
+  const cardW = 42;
+  const verticalRadius = 103;
+  const rootGap = 170;
+  const placed = new Set(fixed);
+
+  // Recursively place a directed fan. For n children, distribute rays evenly
+  // through the lower 180 degrees: 180/(n+1), 2*180/(n+1), ... .
+  function placeFan(parentId, centerX, topY, depth, ancestry) {
+    const parent = cardById.get(parentId);
+    if (!parent) return;
+    if (!fixed.has(parentId)) {
+      parent.style.width = `${cardW}px`;
+      parent.style.left = `${centerX - cardW / 2}px`;
+      parent.style.top = `${topY}px`;
+      parent.dataset.positioned = "true";
+    }
+    placed.add(parentId);
+
+    const childIds = (children.get(parentId) || [])
+      .filter(id => !ancestry.has(id) && !fixed.has(id));
+    if (!childIds.length) return;
+
+    const n = childIds.length;
+    const step = 180 / (n + 1);
+    // Radius expands with the number of siblings so cards don't collide.
+    const radius = Math.max(verticalRadius, (cardW + 12) / Math.max(0.25, Math.sin(Math.PI / (n + 1))));
+    const parentHeight = parent.offsetHeight || 110;
+    const originX = centerX;
+    const originY = topY + parentHeight + 10;
+
+    childIds.forEach((childId, index) => {
+      const angle = (index + 1) * step * Math.PI / 180;
+      const x = originX + radius * Math.cos(angle);
+      const y = originY + radius * Math.sin(angle);
+      const child = cardById.get(childId);
+      if (!child) return;
+      child.style.width = `${cardW}px`;
+      child.style.left = `${x - cardW / 2}px`;
+      child.style.top = `${y}px`;
+      child.dataset.positioned = "true";
+      placed.add(childId);
+      const nextAncestry = new Set(ancestry);
+      nextAncestry.add(parentId);
+      placeFan(childId, x, y, depth + 1, nextAncestry);
+    });
+  }
+
+  // Root groups are arranged left-to-right with generous room between trees.
+  const heapWidth = heap.clientWidth;
+  const groupWidth = Math.max(rootGap, cardW * 2 + 60);
+  const totalWidth = rootList.length * groupWidth;
+  let rootX = Math.max(cardW / 2 + 20, (heapWidth - totalWidth) / 2 + groupWidth / 2);
+  if (rootX < cardW / 2 + 20) rootX = cardW / 2 + 20;
+
+  rootList.forEach((rootId, index) => {
+    const card = cardById.get(rootId);
+    if (fixed.has(rootId)) return;
+    const x = rootX + index * groupWidth;
+    placeFan(rootId, x, 18, 0, new Set());
+  });
+
+  // Place disconnected objects in a clean row below the main directed graph.
+  let extraY = 24;
+  cards.forEach(card => {
+    const id = card.id.replace("node-", "");
+    if (placed.has(id)) return;
+    if (fixed.has(id)) { placed.add(id); return; }
+    card.style.width = `${cardW}px`;
+    card.style.left = `${18 + (placed.size % Math.max(1, Math.floor(heapWidth / (cardW + 12)))) * (cardW + 12)}px`;
+    card.style.top = `${extraY}px`;
+    card.dataset.positioned = "true";
+    placed.add(id);
+    extraY += card.offsetHeight + 18;
+  });
+
+  // Collision resolution pass: use actual rendered dimensions and move any
+  // intersecting card downward until it has a clear rectangle.
+  const packed = [];
+  const gapX = 24;
+  const gapY = 28;
+  const candidates = cards.map(card => ({
+    card,
+    left: Math.max(12, parseFloat(card.style.left) || 0),
+    top: Math.max(12, parseFloat(card.style.top) || 0),
+    width: card.offsetWidth || cardW,
+    height: card.offsetHeight || 110
+  })).sort((a, b) => a.top - b.top || a.left - b.left);
+
+  for (const item of candidates) {
+    let attempts = 0;
+    while (attempts++ < 5000) {
+      const hit = packed.find(other =>
+        item.left < other.left + other.width + gapX &&
+        item.left + item.width + gapX > other.left &&
+        item.top < other.top + other.height + gapY &&
+        item.top + item.height + gapY > other.top
+      );
+      if (!hit) break;
+      item.top = hit.top + hit.height + gapY;
+    }
+    item.card.style.left = `${item.left}px`;
+    item.card.style.top = `${item.top}px`;
+    packed.push(item);
+  }
+
+  // Keep the viewport fixed and extend the scrollable drawing area to contain
+  // every card, including cards pushed down by collision resolution.
+  const contentWidth = Math.max(heap.clientWidth, ...packed.map(p => p.left + p.width + 24));
+  const contentHeight = Math.max(heap.clientHeight, ...packed.map(p => p.top + p.height + 28));
+  heap.style.setProperty("--heap-content-width", `${Math.ceil(contentWidth)}px`);
+  heap.style.setProperty("--heap-content-height", `${Math.ceil(contentHeight)}px`);
+
+  enableHeapCanvasInteractions();
+}
+
+let heapInteractionsReady = false;
+function enableHeapCanvasInteractions() {
+  if (heapInteractionsReady) return;
+  const heap = $("heap");
+  if (!heap) return;
+  heapInteractionsReady = true;
+  let active = null;
+  heap.addEventListener("pointerdown", event => {
+    const card = event.target.closest(".node");
+    if (card) {
+      if (event.target.closest("button, input, select, textarea")) return;
+      const r = card.getBoundingClientRect(), hr = heap.getBoundingClientRect();
+      active = {type:"card", card, pointerId:event.pointerId, x:event.clientX, y:event.clientY,
+        left:parseFloat(card.style.left) || r.left-hr.left, top:parseFloat(card.style.top) || r.top-hr.top};
+      card.classList.add("dragging"); card.setPointerCapture(event.pointerId); event.preventDefault(); return;
+    }
+    if (event.target !== heap) return;
+    active = {type:"canvas", pointerId:event.pointerId, x:event.clientX, y:event.clientY,
+      positions:[...heap.querySelectorAll(".node")].map(node=>({node,left:parseFloat(node.style.left)||0,top:parseFloat(node.style.top)||0}))};
+    heap.classList.add("dragging-canvas"); heap.setPointerCapture(event.pointerId); event.preventDefault();
+  });
+  heap.addEventListener("pointermove", event => {
+    if (!active || event.pointerId !== active.pointerId) return;
+    const dx=event.clientX-active.x, dy=event.clientY-active.y;
+    if (active.type === "card") {
+      active.card.style.left=`${active.left+dx}px`; active.card.style.top=`${active.top+dy}px`;
+    } else active.positions.forEach(p=>{p.node.style.left=`${p.left+dx}px`;p.node.style.top=`${p.top+dy}px`;});
+    window.parent.postMessage({type:"structx:refresh"},"*");
+  });
+  const finish = event => {
+    if (!active || event.pointerId !== active.pointerId) return;
+    active.card?.classList.remove("dragging"); heap.classList.remove("dragging-canvas"); active=null;
+    window.parent.postMessage({type:"structx:refresh"},"*");
+  };
+  heap.addEventListener("pointerup",finish); heap.addEventListener("pointercancel",finish);
+}
+function drawArrows() {
+  const viz = $("viz"), svg = $("arrows");
+  const base = viz.getBoundingClientRect();
+  svg.setAttribute("width", viz.clientWidth);
+  svg.setAttribute("height", viz.clientHeight);
+  svg.setAttribute("viewBox", `0 0 ${viz.clientWidth} ${viz.clientHeight}`);
+  const rect = el => {
+    const r = el.getBoundingClientRect();
+    return { l:r.left-base.left, r:r.right-base.left, t:r.top-base.top,
+      b:r.bottom-base.top, cx:(r.left+r.right)/2-base.left, cy:(r.top+r.bottom)/2-base.top };
+  };
+  let paths = "";
+  let edgeIndex = 0;
+  for (const [srcId, target] of pairs) {
+    const src = document.getElementById(srcId), dst = document.getElementById("node-" + target);
+    if (!src || !dst) continue;
+    const s = rect(src), d = rect(dst);
+    const sourceCard = src.closest(".node");
+    const sourceBox = sourceCard ? rect(sourceCard) : s;
+    const targetOnRight = d.cx >= sourceBox.cx;
+    const x1 = s.r + 2;
+    const y1 = s.cy;
+    const x2 = targetOnRight ? d.l - 2 : d.r + 2;
+    const y2 = Math.max(d.t + 18, Math.min(d.b - 18, y1));
+    const dir = targetOnRight ? 1 : -1;
+    const gap = Math.abs(x2 - x1);
+    const lane = ((edgeIndex % 5) - 2) * 9;
+    const bend = Math.max(28, Math.min(100, gap * .42));
+    const c1x = x1 + dir * bend;
+    const c2x = x2 - dir * bend;
+    const c1y = y1 + lane;
+    const c2y = y2 + lane;
+    paths += `<path class="pointer-link" d="M${x1},${y1} C${c1x},${c1y} ${c2x},${c2y} ${x2},${y2}" fill="none" ` +
+      `stroke="var(--accent)" stroke-width="2" opacity=".9" marker-end="url(#ah)"/>`;
+    edgeIndex++;
+  }
+  svg.innerHTML = `<defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">` +
+    `<path d="M0,0 L10,5 L0,10 z" fill="var(--accent)"/></marker></defs>` + paths;
+}
+
+function stopAutoplay() {
+  if (autoplayTimer !== null) {
+    clearInterval(autoplayTimer);
+    autoplayTimer = null;
+  }
+  const button = $("autoplay");
+  if (button) button.textContent = "▶ Autoplay";
+}
+
+function updateCodeHighlight(line, shouldScroll = true) {
+  const editor = $("code");
+  const marker = $("lineMarker");
+  if (!editor || !marker || !Number.isFinite(Number(line)) || Number(line) < 1) {
+    if (marker) marker.style.display = "none";
+    return;
+  }
+
+  const style = getComputedStyle(editor);
+  const lineHeight = parseFloat(style.lineHeight) || 19.5;
+  const paddingTop = parseFloat(style.paddingTop) || 12;
+  const borderTop = parseFloat(style.borderTopWidth) || 1;
+  const lineNumber = Number(line);
+
+  if (shouldScroll) {
+    const lineTopInContent = paddingTop + (lineNumber - 1) * lineHeight;
+    const visibleTop = editor.scrollTop;
+    const visibleBottom = visibleTop + editor.clientHeight - paddingTop;
+    if (lineTopInContent < visibleTop) editor.scrollTop = Math.max(0, lineTopInContent - paddingTop);
+    else if (lineTopInContent + lineHeight > visibleBottom) {
+      editor.scrollTop = lineTopInContent + lineHeight - editor.clientHeight + paddingTop * 2;
+    }
+  }
+
+  marker.style.display = "block";
+  marker.style.top = `${editor.offsetTop + borderTop + paddingTop + (lineNumber - 1) * lineHeight - editor.scrollTop}px`;
+  marker.style.height = `${lineHeight}px`;
+  marker.style.left = `${editor.offsetLeft + borderTop}px`;
+  marker.style.right = `${borderTop}px`;
+}
+
+function show(i) {
+  idx = Math.max(0, Math.min(steps.length - 1, i));
+  const s = steps[idx];
+  render(s.state);
+  updateCodeHighlight(s.line, true);
+  $("slider").value = idx;
+  $("pos").textContent = `Step ${idx} of ${steps.length - 1}`;
+  const d = $("desc");
+  d.textContent = s.error ? "⚠ " + s.error : idx === 0 ? s.desc : `Line ${s.line}: ${s.desc}`;
+  d.style.color = s.error ? "var(--bad)" : "";
+  $("console").textContent = s.state.out || "(no output yet)";
+  $("prev").disabled = idx === 0;
+  $("next").disabled = idx === steps.length - 1;
+}
+
+function run() {
+  stopAutoplay();
+  if (!$("code").value.trim()) {
+    $("err").textContent = "Paste a C++ program or choose an example first.";
+    return;
+  }
+  const r = runProgram($("code").value);
+  steps = r.steps;
+  $("err").textContent = r.failed ? steps[steps.length - 1].error : "";
+  $("slider").max = steps.length - 1;
+  $("autoplay").disabled = steps.length < 2;
+  show(steps.length - 1);
+}
+
+const EXAMPLES = {
+  "Graph (adjacency list)": String.raw`#include <iostream>
+#include <vector>
+using namespace std;
+
+class Graph
+{
+    int V;
+    vector<int> *adj;
+
+public:
+    Graph(int v)
+    {
+        V = v;
+        adj = new vector<int>[V];
+    }
+
+    void addEdge(int u, int v)
+    {
+        adj[u].push_back(v);
+        adj[v].push_back(u);
+    }
+
+    void display()
+    {
+        for(int i = 0; i < V; i++)
+        {
+            cout << i << " -> ";
+
+            for(int j : adj[i])
+                cout << j << " ";
+
+            cout << '\n';
+        }
+    }
+
+    ~Graph()
+    {
+        delete[] adj;
+    }
+};
+
+int main()
+{
+    Graph g(5);
+
+    g.addEdge(0, 1);
+    g.addEdge(0, 2);
+    g.addEdge(1, 3);
+    g.addEdge(2, 4);
+
+    g.display();
+}`,
+
+  "Linked list": String.raw`struct Node {
+    int data;
+    Node* next;
+};
+
+int main() {
+    Node* head = nullptr;
+    Node* a = new Node(10);
+    Node* b = new Node(20);
+    head = a;
+    a->next = b;
+    cout << head->next->data << endl;
+    Node* c = new Node(30);
+    a = c;
+    delete b;
+    return 0;
+}`,
+
+  "Inheritance": String.raw`class Animal {
+public:
+    int legs;
+};
+
+class Dog : public Animal {
+public:
+    int tricks;
+};
+
+int main() {
+    Animal* pet = new Dog(4, 3);
+    Dog guard(4, 5);
+    pet = &guard;
+    cout << pet->legs << endl;
+}`,
+
+  "Memory leak": String.raw`struct Node {
+    int data;
+    Node* next;
+};
+
+int main() {
+    Node* a = new Node(1);
+    a = new Node(2);
+    delete a;
+}`,
+
+  "Dangling pointer": String.raw`struct Node {
+    int data;
+    Node* next;
+};
+
+int main() {
+    Node* p = new Node(7);
+    Node* q = p;
+    delete p;
+    q->data = 99;
+}`,
+
+  "Merge two sorted linked lists": String.raw`struct Node {
+    int data;
+    Node* next;
+};
+
+int main() {
+    Node* a1 = new Node(10);
+    Node* a2 = new Node(30);
+    Node* a3 = new Node(50);
+
+    Node* b1 = new Node(20);
+    Node* b2 = new Node(40);
+    Node* b3 = new Node(60);
+
+    a1->next = a2;
+    a2->next = a3;
+    b1->next = b2;
+    b2->next = b3;
+
+    Node* head = a1;
+    Node* tail = a1;
+
+    tail->next = b1;
+    tail = b1;
+    tail->next = a2;
+    tail = a2;
+    tail->next = b2;
+    tail = b2;
+    tail->next = a3;
+    tail = a3;
+    tail->next = b3;
+    tail = b3;
+    tail->next = nullptr;
+
+    cout << "Merged head: " << head->data << endl;
+    cout << "Merged second: " << head->next->data << endl;
+    cout << "Merged last: " << tail->data << endl;
+}`,
+
+  "Reverse a linked list": String.raw`struct Node {
+    int data;
+    Node* next;
+};
+
+int main() {
+    Node* head = new Node(10);
+    head->next = new Node(20);
+    head->next->next = new Node(30);
+    head->next->next->next = new Node(40);
+
+    Node* previous = nullptr;
+    Node* current = head;
+    Node* nextNode = nullptr;
+
+    while (current != nullptr) {
+        nextNode = current->next;
+        current->next = previous;
+        previous = current;
+        current = nextNode;
+    }
+
+    head = previous;
+    cout << "New head: " << head->data << endl;
+}`,
+
+  "Binary tree": String.raw`struct TreeNode {
+    int data;
+    TreeNode* left;
+    TreeNode* right;
+};
+
+int main() {
+    TreeNode* root = new TreeNode(10);
+    root->left = new TreeNode(20);
+    root->right = new TreeNode(30);
+    root->left->left = new TreeNode(40);
+    root->left->right = new TreeNode(50);
+    root->right->left = new TreeNode(60);
+    root->right->right = new TreeNode(70);
+
+    cout << "Root: " << root->data << endl;
+    cout << "Left child: " << root->left->data << endl;
+    cout << "Right child: " << root->right->data << endl;
+}`,
+
+  "Graph with branching pointers": String.raw`struct Vertex {
+    int id;
+    Vertex* edge1;
+    Vertex* edge2;
+    Vertex* edge3;
+};
+
+int main() {
+    Vertex* a = new Vertex(1);
+    Vertex* b = new Vertex(2);
+    Vertex* c = new Vertex(3);
+    Vertex* d = new Vertex(4);
+    Vertex* e = new Vertex(5);
+
+    a->edge1 = b;
+    a->edge2 = c;
+    b->edge1 = d;
+    b->edge2 = e;
+    c->edge1 = e;
+
+    cout << "Start vertex: " << a->id << endl;
+}`,
+
+  "Two lists sharing a tail": String.raw`struct Node {
+    int data;
+    Node* next;
+};
+
+int main() {
+    Node* shared1 = new Node(70);
+    Node* shared2 = new Node(80);
+    shared1->next = shared2;
+
+    Node* first = new Node(10);
+    first->next = new Node(20);
+    first->next->next = shared1;
+
+    Node* second = new Node(30);
+    second->next = new Node(40);
+    second->next->next = shared1;
+
+    cout << "First list: " << first->data << endl;
+    cout << "Second list: " << second->data << endl;
+    cout << "Shared node: " << shared1->data << endl;
+}`,
+
+  "Delete a middle node": String.raw`struct Node {
+    int data;
+    Node* next;
+};
+
+int main() {
+    Node* head = new Node(10);
+    head->next = new Node(20);
+    head->next->next = new Node(30);
+    head->next->next->next = new Node(40);
+
+    Node* previous = head;
+    Node* target = head->next;
+
+    previous->next = target->next;
+    delete target;
+
+    cout << "New second node: " << head->next->data << endl;
+}`,
+
+  "Circular linked list": String.raw`struct Node {
+    int data;
+    Node* next;
+};
+
+int main() {
+    Node* first = new Node(10);
+    Node* second = new Node(20);
+    Node* third = new Node(30);
+
+    first->next = second;
+    second->next = third;
+    third->next = first;
+
+    cout << "First: " << first->data << endl;
+    cout << "Back to first: " << third->next->data << endl;
+}`
+};
+
+const examplesMenu = $("examplesMenu");
+for (const name of Object.keys(EXAMPLES)) {
+  const item = document.createElement("button");
+  item.type = "button";
+  item.textContent = name;
+  item.onclick = () => {
+    stopAutoplay();
+    $("code").value = EXAMPLES[name];
+    $("err").textContent = "";
+    $("lineMarker").style.display = "none";
+    examplesMenu.hidden = true;
+    $("examplesToggle").setAttribute("aria-expanded", "false");
+    $("code").focus();
+  };
+  examplesMenu.append(item);
+}
+$("examplesToggle").onclick = () => {
+  examplesMenu.hidden = !examplesMenu.hidden;
+  $("examplesToggle").setAttribute("aria-expanded", String(!examplesMenu.hidden));
+};
+document.addEventListener("click", event => {
+  if (!event.target.closest(".example-tools")) {
+    examplesMenu.hidden = true;
+    $("examplesToggle").setAttribute("aria-expanded", "false");
+  }
+});
+$("run").onclick = run;
+$("prev").onclick = () => { stopAutoplay(); show(idx - 1); };
+$("next").onclick = () => { stopAutoplay(); show(idx + 1); };
+$("slider").oninput = e => { stopAutoplay(); show(+e.target.value); };
+$("autoplay").onclick = () => {
+  if (autoplayTimer !== null) {
+    stopAutoplay();
+    return;
+  }
+  if (!steps.length) return;
+  if (idx >= steps.length - 1) show(0);
+  $("autoplay").textContent = "Ⅱ Pause";
+  const speed = Number($("playbackSpeed").value) || 1;
+  const interval = Math.max(60, Math.round(300 / speed));
+  autoplayTimer = setInterval(() => {
+    if (idx >= steps.length - 1) {
+      stopAutoplay();
+      return;
+    }
+    show(idx + 1);
+    if (idx >= steps.length - 1) stopAutoplay();
+  }, interval);
+};
+$("code").addEventListener("scroll", () => {
+  const s = steps[idx];
+  if (s) updateCodeHighlight(s.line, false);
+});
+$("code").addEventListener("input", () => {
+  stopAutoplay();
+  $("lineMarker").style.display = "none";
+});
+window.addEventListener("resize", () => { if (steps.length) { drawArrows(); updateCodeHighlight(steps[idx]?.line, false); } });
+
+// Start with an empty editor. Nothing executes until the user presses Run.
+$("code").value = "";
+$("stack").innerHTML = `<div class="empty">Nothing in scope</div>`;
+$("heap").innerHTML = `<div class="empty">Heap is empty</div>`;
+$("desc").textContent = "Paste C++ code or choose an example, then press Run.";
+$("console").textContent = "(no output yet)";
+$("pos").textContent = "No execution";
+$("prev").disabled = true;
+$("next").disabled = true;
+$("slider").max = 0;
+$("slider").value = 0;
+$("autoplay").disabled = true;
+steps = [];
+idx = 0;
+</script>
+</body>
+</html>
+
+<!-- write-test -->
